@@ -1,0 +1,14 @@
+{
+  "name": "uadochoiha-ig-sync",
+  "version": "1.0.0",
+  "description": "Tu dong: Instagram -> scrape -> day len site uadochoiha",
+  "main": "sync.js",
+  "scripts": {
+    "sync": "node sync.js",
+    "scrape": "node scrape.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

@@ -1,0 +1,47 @@
+name: daily-ig-sync
+
+on:
+  schedule:
+    # 23:30 giờ VN = 16:30 UTC
+    - cron: "30 16 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ig-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CHROME_PATH: /usr/bin/google-chrome-stable
+      UAD_PASSWORD: ${{ secrets.UAD_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cài dependency
+        run: npm ci --no-audit --no-fund
+
+      - name: Chạy đồng bộ Instagram -> site
+        run: |
+          mkdir -p data
+          node sync.js
+
+      - name: Lưu log phiên chạy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-log-${{ github.run_number }}
+          path: |
+            data/
+            !data/**/*.csv
+          retention-days: 14
