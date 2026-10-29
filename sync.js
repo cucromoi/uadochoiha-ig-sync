@@ -77,7 +77,7 @@ async function runOnce() {
 
     if (dry) {
       console.log('\n--dry: không ghi gì lên store.');
-      return 0;
+      return plan.length;
     }
 
     const password = await readPassword();
@@ -92,9 +92,10 @@ async function runOnce() {
 async function main() {
   try {
     const n = await runOnce();
-    console.log(n ? `Đã đẩy ${n} sản phẩm lên site.` : 'Không có bài mới nào.');
+    console.log(n ? `${dry ? 'Sẽ đẩy' : 'Đã đẩy'} ${n} sản phẩm lên site.` : 'Không có bài mới nào.');
   } catch (err) {
     console.error('LỖI:', err.message);
+    if (process.env.CI) console.error(err.stack);
     process.exitCode = 1;
   }
 }

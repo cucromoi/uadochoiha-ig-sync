@@ -15,11 +15,13 @@ permissions:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    # Cố định bản Ubuntu: ubuntu-latest đang chuyển sang 26 và đường dẫn Chrome có thể đổi.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       CHROME_PATH: /usr/bin/google-chrome-stable
       UAD_PASSWORD: ${{ secrets.UAD_PASSWORD }}
+      CI: true
     steps:
       - uses: actions/checkout@v4
 
@@ -28,20 +30,25 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Kiểm tra Chrome trên runner
+        run: |
+          "$CHROME_PATH" --version
+          curl -s -o /dev/null -w 'instagram HTTP %{http_code}\n' https://www.instagram.com/uadochoiha/
+
       - name: Cài dependency
         run: npm ci --no-audit --no-fund
 
       - name: Chạy đồng bộ Instagram -> site
+        shell: bash
         run: |
           mkdir -p data
-          node sync.js
+          set -o pipefail
+          node sync.js 2>&1 | tee data/sync.log
 
       - name: Lưu log phiên chạy
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sync-log-${{ github.run_number }}
-          path: |
-            data/
-            !data/**/*.csv
+          path: data/
           retention-days: 14

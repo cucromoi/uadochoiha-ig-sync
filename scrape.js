@@ -30,7 +30,14 @@ const CONTEXT_OPTS = {
 export function launchContext({ headless = true, userDataDir = path.resolve('.ig-profile') } = {}) {
   const executablePath = chromePath();
   if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH=<đường dẫn binary>.');
-  return chromium.launchPersistentContext(userDataDir, { ...CONTEXT_OPTS, headless, executablePath });
+  // Chạy trong CI: Chrome cần tắt sandbox và không dùng /dev/shm nhỏ của container.
+  const args = process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : [];
+  return chromium.launchPersistentContext(userDataDir, {
+    ...CONTEXT_OPTS,
+    headless,
+    executablePath,
+    args,
+  });
 }
 
 async function dismissLoginWall(page) {
