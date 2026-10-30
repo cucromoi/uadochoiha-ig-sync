@@ -67,7 +67,10 @@ jobs:
           {
             echo "time: $(date -u +%FT%TZ)"
             echo "run:  ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "log:  $(tail -n 1 data/sync.log 2>/dev/null || echo '(khong chay den duoc sync)')"
+            echo ""
+            echo '```'
+            cat data/sync.log 2>/dev/null || echo '(khong chay den duoc sync)'
+            echo '```'
           } > .github/LAST_RUN.md
           git add .github/LAST_RUN.md
           git commit --allow-empty -m "heartbeat ${GITHUB_RUN_NUMBER}"
