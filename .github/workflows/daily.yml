@@ -59,6 +59,9 @@ jobs:
         if: always()
         shell: bash
         run: |
+          # Lay dinh main hien tai lam nen: khi Re-run mot commit cu, push van khong bi tu choi.
+          git fetch -q origin main
+          git checkout -q -B main origin/main
           git config user.name "ig-sync"
           git config user.email "ig-sync@users.noreply.github.com"
           {
@@ -68,4 +71,4 @@ jobs:
           } > .github/LAST_RUN.md
           git add .github/LAST_RUN.md
           git commit --allow-empty -m "heartbeat ${GITHUB_RUN_NUMBER}"
-          git push origin HEAD:main
+          git push -q origin main
