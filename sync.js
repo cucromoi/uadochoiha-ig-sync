@@ -48,15 +48,28 @@ async function runOnce() {
 
   const context = await launchContext();
   try {
-    const codes = linksFile
-      ? (await readFile(linksFile, 'utf8'))
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter((l) => l && !l.startsWith('#'))
-          .map(shortcode)
-          .filter(Boolean)
-      : await discoverPosts(context, PROFILE, { limit });
+    let codes;
+    if (linksFile) {
+      codes = (await readFile(linksFile, 'utf8'))
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#'))
+        .map(shortcode)
+        .filter(Boolean);
+    } else {
+      // Instagram có lúc trả grid trống cho IP lạ; thử lại 1 lần trước khi kết luận bị chặn.
+      for (let try_ = 1; ; try_++) {
+        codes = await discoverPosts(context, PROFILE, { limit });
+        if (codes.length || try_ >= 2) break;
+        console.log(`  grid trống, thử lại lần ${try_ + 1} sau 10s...`);
+        await new Promise((r) => setTimeout(r, 10_000));
+      }
+    }
     const source = linksFile ? `file ${linksFile}` : `grid ${new URL(PROFILE).pathname}`;
+    // 0 bài = bị chặn/tường đăng nhập, KHÔNG phải "hết bài mới". Phải đỏ để chủ repo biết.
+    if (!codes.length) {
+      throw new Error(`${source} trả về 0 bài — Instagram đang chặn phiên cào (khác "không có bài mới").`);
+    }
     const fresh = codes.filter((c) => !have.has(c));
     console.log(`${source}: ${codes.length} bài, ${fresh.length} bài lạ.`);
     if (!fresh.length) return 0;
