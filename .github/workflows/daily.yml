@@ -1,9 +1,9 @@
 name: daily-ig-sync
 
 on:
-  schedule:
-    # 23:30 giờ VN = 16:30 UTC
-    - cron: "30 16 * * *"
+  # Instagram trả 429/403 cho IP datacenter của GitHub (do loi do, ngay 2026-10-30),
+  # nên bo cron o day. Viec tu dong hang ngay chay tren may cua Nam (daily.bat + Task Scheduler).
+  # Nút "Run workflow" van giu de khi can chay tay emergency.
   workflow_dispatch:
 
 concurrency:
