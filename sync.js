@@ -1,11 +1,14 @@
 // Entry point duy nhất: tự tìm bài mới trên trang Instagram của shop -> scrape -> đẩy lên site.
-//   node sync.js                  = chạy một lần, lấy tối đa 50 bài gần nhất, đẩy thật
+//   node sync.js                  = chạy một lần, lấy 20 bài gần nhất, đẩy thật
 //   node sync.js --dry            = chỉ xem sẽ đẩy gì, không ghi
 //   node sync.js --login          = mở trình duyệt đăng nhập 1 lần (bắt buộc nếu muốn vượt trần 12 bài)
 //   node sync.js --limit 100      = lấy bao nhiêu bài gần nhất
 //   node sync.js --loop 60        = cứ 60 phút tự chạy lại một lần
+//   node sync.js --pages          = chỉ sinh lại trang chỉ mục cho site, không cào
 //   node sync.js links.txt        = ép chạy đúng danh sách link trong file, bỏ qua bước tự tìm
+// skip.txt (thư mục gốc, được git theo dõi) = những bài vĩnh viễn bỏ qua, ví dụ bài không có giá.
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { launchContext, discoverPosts, scrapePosts } from './scrape.js';
 import {
@@ -24,7 +27,7 @@ const dry = args.includes('--dry');
 const loopIdx = args.indexOf('--loop');
 const loopMin = loopIdx !== -1 ? Number(args[loopIdx + 1]) || 60 : 0;
 const limitIdx = args.indexOf('--limit');
-const limit = limitIdx !== -1 ? Number(args[limitIdx + 1]) || 50 : 50;
+const limit = limitIdx !== -1 ? Number(args[limitIdx + 1]) || 20 : 20;
 // tham số vị trí = file danh sách link (bỏ qua flag và tham số của --loop)
 const linksFile =
   args.find((a, i) => !a.startsWith('--') && !/^\d+$/.test(a) && args[i - 1] !== '--loop') ?? null;
@@ -36,6 +39,36 @@ async function saveLog(rows) {
   const file = path.join(dir, `sync-${stamp}.json`);
   await writeFile(file, JSON.stringify(rows.map(({ imageDataUrl, ...r }) => r), null, 2), 'utf8');
   return file;
+}
+
+async function readSkip() {
+  const toCode = (s) => shortcode(s) ?? (/^[\w-]{5,}$/.test(s) ? s : null);
+  let raw;
+  try {
+    raw = await readFile('skip.txt', 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return new Set();
+    throw err;
+  }
+  return new Set(
+    raw
+      .split(/\r?\n/)
+      .map((l) => l.split('#')[0].trim())
+      .filter(Boolean)
+      .map(toCode)
+      .filter(Boolean)
+  );
+}
+
+// make-pages.js nằm ở repo site, sinh p/<id>.html + sitemap.xml cho toàn bộ món đang có.
+const SITE_DIR = process.env.UAD_SITE ?? 'D:/uadochoiha';
+
+function buildIndex() {
+  console.log('\nSinh trang chỉ mục (make-pages.js)...');
+  const r = spawnSync(process.execPath, ['make-pages.js'], { cwd: SITE_DIR, encoding: 'utf8' });
+  if (r.error) throw new Error(`không chạy được make-pages.js trong ${SITE_DIR}: ${r.error.message}`);
+  if (r.status !== 0) throw new Error(`make-pages.js báo lỗi: ${(r.stderr || r.stdout || '').trim().slice(0, 300)}`);
+  console.log(r.stdout.trim().replace(/^/gm, '  '));
 }
 
 async function runOnce() {
@@ -59,7 +92,7 @@ async function runOnce() {
     } else {
       // Instagram có lúc trả grid trống cho IP lạ; thử lại 1 lần trước khi kết luận bị chặn.
       for (let try_ = 1; ; try_++) {
-        codes = await discoverPosts(context, PROFILE, { limit });
+        codes = await discoverPosts(context, PROFILE, { limit, maxScrolls: Math.max(30, limit) });
         if (codes.length || try_ >= 2) break;
         console.log(`  grid trống, thử lại lần ${try_ + 1} sau 10s...`);
         await new Promise((r) => setTimeout(r, 10_000));
@@ -70,8 +103,19 @@ async function runOnce() {
     if (!codes.length) {
       throw new Error(`${source} trả về 0 bài — Instagram đang chặn phiên cào (khác "không có bài mới").`);
     }
-    const fresh = codes.filter((c) => !have.has(c));
-    console.log(`${source}: ${codes.length} bài, ${fresh.length} bài lạ.`);
+    const skip = await readSkip();
+    const ignored = codes.filter((c) => skip.has(c) && !have.has(c));
+    const onSite = codes.filter((c) => have.has(c));
+    const fresh = codes.filter((c) => !have.has(c) && !skip.has(c));
+    console.log(
+      `${source}: ${codes.length} bài, ${onSite.length} đã có trên site, ${fresh.length} bài lạ` +
+        (ignored.length ? `, bỏ ${ignored.length} bài theo skip.txt.` : '.')
+    );
+    // Grid trả ~12 bài = phiên đăng nhập hết hạn; limit cao cỡ nào cũng chỉ cào tới 12.
+    if (!linksFile && codes.length <= 12)
+      console.log(
+        `  CẢNH BÁO: chỉ lấy được ${codes.length} bài — chạy \`node sync.js --login\` để đăng nhập lại.`
+      );
     if (!fresh.length) return 0;
 
     const rows = await scrapePosts(context, fresh.map((c) => `https://www.instagram.com/p/${c}/`), {
@@ -96,7 +140,14 @@ async function runOnce() {
     const password = await readPassword();
     if (!(await checkPassword(password)).ok) throw new Error('Sai mật khẩu admin');
     console.log('');
-    return (await pushProducts(plan, password)).length;
+    const pushed = await pushProducts(plan, password);
+    try {
+      if (pushed.length) buildIndex();
+    } catch (err) {
+      console.log(`  CẢNH BÁO: món mới chưa có trang chỉ mục — ${err.message}`);
+      console.log(`  Chạy lại tay: cd "${SITE_DIR}" && node make-pages.js`);
+    }
+    return pushed.length;
   } finally {
     await context.close();
   }
@@ -111,6 +162,11 @@ async function main() {
     if (process.env.CI) console.error(err.stack);
     process.exitCode = 1;
   }
+}
+
+if (args.includes('--pages')) {
+  buildIndex();
+  process.exit(0);
 }
 
 if (args.includes('--login')) {

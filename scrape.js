@@ -72,21 +72,24 @@ function parseAmount(str) {
 }
 
 function toVnd(raw) {
-  const m = raw.match(/^(\d[\d.,]*)\s*(k|nghìn|tr|triệu|đ|vnd)?$/i);
+  const m = raw.match(/^(\d[\d.,]*)\s*(k|nghìn|tr|triệu|đ|vnd|cái|cá|ca|ká)?$/i);
   if (!m) return null;
   const amount = parseAmount(m[1]);
   if (!Number.isFinite(amount) || amount === 0) return null;
   const unit = (m[2] || '').toLowerCase();
-  if (unit === 'k' || unit === 'nghìn') return Math.round(amount * 1000);
+  // "85cá" / "115ká" = giá tính theo từng cái, cùng thang với k
+  if (unit === 'k' || unit === 'nghìn' || unit === 'cái' || unit === 'cá' || unit === 'ca' || unit === 'ká')
+    return Math.round(amount * 1000);
   if (unit === 'tr' || unit === 'triệu') return Math.round(amount * 1_000_000);
   return Math.round(amount);
 }
 
-const PRICE_LABEL = /\b(?:price|pr|giá)\s*[:\-–=]?\s*(\d[\d.,]*\s*(?:k|nghìn|tr|triệu|đ|vnd)?)/i;
+const PRICE_LABEL = /\b(?:price|pr|giá)\s*[:\-–=]?\s*(\d[\d.,]*\s*(?:k|nghìn|tr|triệu|đ|vnd|cái|cá|ká|ca)?)/i;
 // đơn vị "m" bị cố ý loại vì dễ nhầm với "60*40cm"
-const PRICE_TOKEN_G = /(?:\d[\d.,]*\s*(?:k|nghìn|tr|triệu|vnd|đ)\b|\d{1,3}(?:[.,]\d{3})+)\b/gi;
+// \b chỉ tính ký tự ASCII nên "85cá" không có ranh giới sau chữ á -> phải dùng lookahead unicode.
+const PRICE_TOKEN_G = /(?:\d[\d.,]*\s*(?:k|nghìn|tr|triệu|vnd|đ|cái|cá|ká|ca)(?!\p{L})|\d{1,3}(?:[.,]\d{3})+\b)(?!\p{N})/giu;
 
-function extractPrices(caption) {
+export function extractPrices(caption) {
   const list = [...caption.matchAll(PRICE_TOKEN_G)]
     .map((m) => ({ raw: m[0].replace(/\s+/g, ' ').trim(), vnd: toVnd(m[0].trim()) }))
     .filter((p) => p.vnd);
@@ -193,13 +196,14 @@ export async function discoverPosts(context, profileUrl, { limit = 50, maxScroll
       );
     let stable = 0;
     for (let i = 0; i <= maxScrolls && codes.size < limit; i++) {
-      for (const c of await grab()) codes.add(c);
-      if (codes.size >= limit) break;
       const before = codes.size;
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      for (const c of await grab()) codes.add(c);
+      stable = codes.size > before ? 0 : stable + 1;
+      if (stable >= 5) break; // grid thật sự không tải thêm nữa
+      // Instagram chỉ tải thêm khi có wheel event thật; window.scrollTo không kích hoạt gì.
+      await page.mouse.move(640, 400);
+      for (let k = 0; k < 10; k++) await page.mouse.wheel(0, 1200);
       await page.waitForTimeout(waitMs);
-      stable = codes.size === before ? stable + 1 : 0;
-      if (stable >= 4) break; // grid hết tải (gặp tường đăng nhập)
     }
     return [...codes].slice(0, limit);
   } finally {
