@@ -4,11 +4,9 @@
 //   node sync.js --login          = mở trình duyệt đăng nhập 1 lần (bắt buộc nếu muốn vượt trần 12 bài)
 //   node sync.js --limit 100      = lấy bao nhiêu bài gần nhất
 //   node sync.js --loop 60        = cứ 60 phút tự chạy lại một lần
-//   node sync.js --pages          = chỉ sinh lại trang chỉ mục cho site, không cào
 //   node sync.js links.txt        = ép chạy đúng danh sách link trong file, bỏ qua bước tự tìm
 // skip.txt (thư mục gốc, được git theo dõi) = những bài vĩnh viễn bỏ qua, ví dụ bài không có giá.
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { launchContext, discoverPosts, scrapePosts } from './scrape.js';
 import {
@@ -58,17 +56,6 @@ async function readSkip() {
       .map(toCode)
       .filter(Boolean)
   );
-}
-
-// make-pages.js nằm ở repo site, sinh p/<id>.html + sitemap.xml cho toàn bộ món đang có.
-const SITE_DIR = process.env.UAD_SITE ?? 'D:/uadochoiha';
-
-function buildIndex() {
-  console.log('\nSinh trang chỉ mục (make-pages.js)...');
-  const r = spawnSync(process.execPath, ['make-pages.js'], { cwd: SITE_DIR, encoding: 'utf8' });
-  if (r.error) throw new Error(`không chạy được make-pages.js trong ${SITE_DIR}: ${r.error.message}`);
-  if (r.status !== 0) throw new Error(`make-pages.js báo lỗi: ${(r.stderr || r.stdout || '').trim().slice(0, 300)}`);
-  console.log(r.stdout.trim().replace(/^/gm, '  '));
 }
 
 async function runOnce() {
@@ -141,12 +128,6 @@ async function runOnce() {
     if (!(await checkPassword(password)).ok) throw new Error('Sai mật khẩu admin');
     console.log('');
     const pushed = await pushProducts(plan, password);
-    try {
-      if (pushed.length) buildIndex();
-    } catch (err) {
-      console.log(`  CẢNH BÁO: món mới chưa có trang chỉ mục — ${err.message}`);
-      console.log(`  Chạy lại tay: cd "${SITE_DIR}" && node make-pages.js`);
-    }
     return pushed.length;
   } finally {
     await context.close();
@@ -162,11 +143,6 @@ async function main() {
     if (process.env.CI) console.error(err.stack);
     process.exitCode = 1;
   }
-}
-
-if (args.includes('--pages')) {
-  buildIndex();
-  process.exit(0);
 }
 
 if (args.includes('--login')) {
